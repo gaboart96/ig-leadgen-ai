@@ -7,6 +7,7 @@ from lead_generator.scraping.extraer_datos_perfil import extraer_datos_perfil
 from lead_generator.filtro.filtro_comentarios import filtrar_comentarios_por_usuarios
 from lead_generator.filtro.filtro_perfiles import filtrar_perfil_por_datos
 from lead_generator.scoring.score_bio import scorear_bio
+from lead_generator.scraping.extraer_fotos_perfil import extraer_feed_fotos
 from lead_generator.scoring.score_global import scorear_fotos_por_carpeta, scorear_usuario_global
 from lead_generator.utils import iniciar_driver, iniciar_driver_movil, obtener_driver_logueado, cerrar_driver
 from lead_generator.auth.login import login_instagram, login_instagram_movil, pedir_credenciales
@@ -21,7 +22,7 @@ from lead_generator.utils.db import (
     cargar_posts_scrapeados,
     iniciar_db,
     guardar_resultado_analisis_perfil, 
-    descartar_usuario_por_perfil
+    descartar_usuario
 )
 import logging
 
@@ -45,7 +46,7 @@ def etapa_filtrar_perfiles(conn, driver):
     cursor.execute("SELECT username FROM usuarios_filtrados")
     usuarios = cursor.fetchall()
     time.sleep(10)
-    usuarios_max = 10  # ejemplo para testear con solo 10
+    usuarios_max = 1500  # ejemplo para testear con solo 10
     for idx, (username,) in enumerate(usuarios):
         if idx >= usuarios_max:
             break
@@ -54,21 +55,32 @@ def etapa_filtrar_perfiles(conn, driver):
             datos = extraer_datos_perfil(username, driver)
             resultado = filtrar_perfil_por_datos(datos)
 
-            logging.info(f"🧾 {username} | Bio: {datos['bio'][:40]}")
-            logging.info(f"📊 Publicaciones: {datos['publicaciones']}, Seguidores: {datos['seguidores']}, Seguidos: {datos['seguidos']}, Historias: {datos['historias_destacadas']}")
+            #logging.info(f"🧾 {username} | Bio: {datos['bio'][:40]}")
+            #logging.info(f"📊 Publicaciones: {datos['publicaciones']}, Seguidores: {datos['seguidores']}, Seguidos: {datos['seguidos']}, Historias: {datos['historias_destacadas']}")
 
             guardar_resultado_analisis_perfil(conn, username, datos, resultado)
-            if resultado["score_prefiltrado"] < -1.0:
-                descartar_usuario_por_perfil(conn, username, resultado["razones"])
+
+            if resultado["score_malo"] <= -1.0:
+                descartar_usuario(conn, username, resultado.get("razones_malo", []), "descartados_malos")
                 continue
+
+            if resultado["score_mujer"] <= -1.0:
+                descartar_usuario(conn, username, resultado.get("razones_mujer", []), "descartados_mujer")
+                continue
+
             print(f"""
                 📝 Usuario procesado: {username}
-                📊 Score prefiltrado: {datos.get('score_prefiltrado', '')}
-                🔍 Profesión: {datos.get('profesion_estimada', '')}
-                🌍 Localizaciones: {datos.get('localizaciones', [])}
-                🎭 Culturas: {datos.get('culturas', [])}
+                📊 Score malo: {resultado.get('score_malo', '')}
+                📊 Score mujer: {resultado.get('score_mujer', '')}
+                🔍 Profesión: {resultado.get('profesion', '')}
+                🌍 Localizaciones: {resultado.get('localizaciones', [])}
+                🎭 Culturas: {resultado.get('culturas', [])}
                 💬 Bio: {datos.get('bio', '')}
-                """)
+                Links externos: {datos.get('links_externos', '')}
+            """)
+            if resultado["score_mujer"] >= -1.0 and resultado["score_malo"] >= -1.0:
+                carpeta = os.path.join(IMG_DIR, username) 
+                extraer_feed_fotos(driver, username, carpeta)
         except Exception as e:
             logging.error(f"⚠️ Error al procesar {username}: {e}", exc_info=True)
     conn.commit()
@@ -82,14 +94,15 @@ def etapa_scorear_bios(conn):
             cursor.execute(f"UPDATE usuarios_filtrados SET {k} = ? WHERE username = ?", (v, username))
     conn.commit()
 
-def etapa_scorear_fotos(conn):
+def etapa_scorear_fotos(conn, driver):
     cursor = conn.cursor()
-    cursor.execute("SELECT username FROM usuarios")
+    cursor.execute("SELECT username FROM usuarios_filtrados")
     for (username,) in cursor.fetchall():
         carpeta = os.path.join(IMG_DIR, username)
         if os.path.exists(carpeta):
+            
             score = scorear_fotos_por_carpeta(carpeta)
-            cursor.execute("UPDATE usuarios SET score_fotos = ? WHERE username = ?", (score, username))
+            cursor.execute("UPDATE usuarios_filtrados SET score_fotos = ? WHERE username = ?", (score, username))
     conn.commit()
 
 def etapa_scorear_global(conn):
@@ -137,9 +150,9 @@ def main():
 
     if necesita_driver:
         if args.etapa == "scorear_fotos":
-            driver = iniciar_driver_movil(headless=False)
+            driver = iniciar_driver_movil(headless=True)
         else:
-            driver = iniciar_driver(headless=False)
+            driver = iniciar_driver(headless=True)
 
         if not args.usuario or not args.password:
             args.usuario, args.password = pedir_credenciales()
@@ -160,7 +173,7 @@ def main():
         elif args.etapa == "scorear_bios":
             etapa_scorear_bios(conn)
         elif args.etapa == "scorear_fotos":
-            etapa_scorear_fotos(conn)
+            etapa_scorear_fotos(conn, driver)
         elif args.etapa == "scorear_global":
             etapa_scorear_global(conn)
         elif args.etapa == "pipeline":

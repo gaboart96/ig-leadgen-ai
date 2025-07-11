@@ -1,16 +1,59 @@
 import unicodedata
 import re
+from urllib.parse import urlparse, parse_qs, unquote
+
+abreviaciones_profesionales = {
+    "ing", "dra", "dr", "lic", "arq", "prof", "tec", "abog", "med", "psic", "bioq"
+}
+
+def detectar_nombre_punteado(texto):
+    palabras = texto.split()
+    for palabra in palabras:
+        letras = palabra.split(".")
+        letras = [l for l in letras if l]  # saca vacíos como en "m.a.r.i.a."
+
+        if len(letras) >= 3 and all(len(l) == 1 for l in letras):  # patrón de iniciales
+            reconstruido = ''.join(letras)
+            if reconstruido not in abreviaciones_profesionales:
+                if contiene_nombre_femenino(reconstruido) is True:
+                    return True, f"Nombre punteado detectado: {palabra} → {reconstruido}"
+    return False, ""
 
 def normalizar_texto(texto):
+    """
+    Normaliza un texto para facilitar comparaciones:
+    - Pasa a minúsculas
+    - Elimina tildes y signos diacríticos
+    - Conserva letras, números, espacios y emojis
+    - Elimina símbolos de puntuación y caracteres raros
+
+    Ideal para detección de culturas, localizaciones, nombres, etc.
+    """
     if not texto:
         return ""
-    original = texto
+
+    # Pasa a minúsculas
     texto = texto.lower()
-    texto = unicodedata.normalize("NFD", texto).encode("ascii", "ignore").decode("utf-8")
-    texto = re.sub(r'[^\w\s]', '', texto)  # elimina todo salvo letras/numeros/espacios
-    texto = re.sub(r'\s+', ' ', texto).strip()
-    print(f"🔬 Texto original: '{original}' → Normalizado: '{texto}'")
-    return texto
+
+    # Normaliza para separar letras y tildes (e.g. á -> a +  ́)
+    texto = unicodedata.normalize('NFD', texto)
+
+    # Elimina los signos diacríticos (categoría Unicode 'Mn')
+    texto = ''.join(c for c in texto if unicodedata.category(c) != 'Mn')
+
+    # Elimina todo lo que no sea letra, número, espacio o emoji común
+    texto = re.sub(
+        r"[^\w\s"
+        r"\U0001F600-\U0001F64F"  # Emoticonos
+        r"\U0001F300-\U0001F5FF"  # Símbolos y pictogramas
+        r"\U0001F680-\U0001F6FF"  # Transporte y mapas
+        r"\U0001F1E6-\U0001F1FF"  # Banderas (letras regionales)
+        r"]+",
+        "",
+        texto
+    )
+
+    return texto.strip()
 
 """""
 
@@ -25,6 +68,17 @@ def contiene_nombre_exacto(username, nombres_lista):
                 return True
     return False
 """""
+
+
+def extraer_link_real(instagram_link):
+    """
+    Extrae el link real del redireccionamiento de Instagram (param 'u')
+    """
+    parsed_url = urlparse(instagram_link)
+    query_params = parse_qs(parsed_url.query)
+    if 'u' in query_params:
+        return unquote(query_params['u'][0])  # decodifica %3A → :
+    return instagram_link  # si no tiene 'u', devuelve el original
 
 def convertir_a_numero(cadena):
     """Convierte texto tipo '2k' o '1.5m' a número entero."""

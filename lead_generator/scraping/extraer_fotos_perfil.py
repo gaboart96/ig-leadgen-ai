@@ -7,7 +7,6 @@ import io
 import requests
 import time
 from lead_generator.utils import iniciar_driver
-from lead_generator.auth.login import login
 
 # === CONFIGURACIÓN PREVIA ===
 IMAGENES_POR_FILA = 3
@@ -42,7 +41,7 @@ def obtener_margen_bottom(driver, elemento):
 def extraer_feed_fotos(driver, username, carpeta_destino, max_posts=12):
     perfil_url = f"https://www.instagram.com/{username}/"
     driver.get(perfil_url)
-    WebDriverWait(driver, 3).until(
+    WebDriverWait(driver, 10).until(
         EC.presence_of_element_located((By.XPATH, '//h2 | //h1'))
     )
 
@@ -51,10 +50,16 @@ def extraer_feed_fotos(driver, username, carpeta_destino, max_posts=12):
     capturar_foto_perfil(driver, username, ruta_foto_perfil)
 
     try:
-        feed_div = WebDriverWait(driver, 3).until(
+        # Asegura que está en el perfil
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.XPATH, '//h1 | //h2'))
+        )
+
+        # Espera el feed, con más tiempo y con un XPATH más flexible
+        feed_div = WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((
                 By.XPATH,
-                '//div[contains(@style, "display: flex") and contains(@style, "flex-direction: column") and contains(@style, "position: relative")]'
+                '//div[contains(@style, "flex-direction: column")]//img'
             ))
         )
         y = feed_div.location['y']
@@ -121,19 +126,4 @@ def extraer_feed_fotos(driver, username, carpeta_destino, max_posts=12):
             driver.execute_script(f"window.scrollBy(0, {desplazamiento});")
             scroll_offset += desplazamiento
             time.sleep(0.6)
-
-if __name__ == "__main__":
-    from getpass import getpass
-    USUARIO = input("Usuario de Instagram: ")
-    PASSWORD = getpass("Contraseña: ")
-    PERFIL_URL = input("URL del perfil a capturar: ")
-
-    username = PERFIL_URL.strip("/").split("/")[-1]
-    carpeta = f"output/{username}"
-    driver = iniciar_driver()
-    login(driver, USUARIO, PASSWORD)
-    extraer_feed_fotos(driver, username, carpeta)
-    print("⏳ Esperando antes de cerrar...")
-    time.sleep(2)
-    driver.quit()
 

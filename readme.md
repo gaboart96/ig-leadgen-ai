@@ -10,3 +10,16 @@
 -Si el tipo tiene 6 publicaciones o menos, no haga scroll. y si el perfil es privado, solo haga la captura de la foto de perfil
 -O que detecte la cantidad de elementos y haga la cantidad de recortes segun la cantidad elementos (si es que son menoss de 12)
 -Score positivo y negativo en el prefiltrado
+-persistencia de la sesion
+-headless. 
+-Hacer un criterio de descarte aparte para las minas. 
+-Que links externos sea texto, no integer
+-Separar extraer_datos_perfil de filtrar_perfiles
+-Tabla de score_bio, score_clip, score_deepface
+-Etapa de gpt
+-Repensar criterio string largo. lo mismo para nobmres ambiguos
+-Que detecte perfiles ya analizados
+-Hacer bien las tablas de comentarios y de usuarios, coon las relaciones entre claves
+-Filtrar expresiones tipo "omg"
+-Usar clip para detectar perfiles de muy baja calidad
+detectar fecha de nacimiento en la biografia

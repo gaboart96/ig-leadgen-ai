@@ -7,7 +7,7 @@ from selenium.webdriver.support import expected_conditions as EC
 from selenium.common.exceptions import NoSuchElementException
 from selenium.webdriver.common.by import By
 import time
-from lead_generator.utils import parsear_km
+from lead_generator.utils import parsear_km, extraer_link_real
 
 
 def contar_historias_destacadas(driver):
@@ -39,23 +39,22 @@ def extraer_datos_perfil(username, driver):
     datos = {
         "username": username,
         "comentarios": "",
-        "fotos_analizadas": 0,
-        "fotos_sin_personas": 0,
-        "flag_incompleto": False,
-        "filtro_descartado": False,
-        "motivo_descartado": "",
         "bio": "",
         "perfil_privado": False,
         "publicaciones": 0,
         "seguidores": 0,
         "seguidos": 0,
         "historias_destacadas": 0,
-        "links_externos": 0,
+        "links_externos": "",
         "edad_estimada": None,
-        "profesion_estimada": None,
+        "profesion": None,
         "localizaciones": [],
         "culturas": [],
-        "score_prefiltrado": 0.0,
+        "score_malo": 0.0,
+        "motivo_penalizado_malo": "",
+        "score_mujer": 0.0,
+        "motivo_penalizado_mujer": "",
+        "score_bio": 0.0,
         "score_clip": None,
         "score_deepface": None,
         "score_final": None
@@ -82,26 +81,37 @@ def extraer_datos_perfil(username, driver):
         datos["bio"] = bio_element.text.strip()
         print(f"📋 Bio (aria-disabled) para {username}: '{datos['bio']}'")
     except NoSuchElementException:
-        # Fallback: busca todos los span con dir='auto' y elige el más largo
+        # Fallback: encuentra el primer span con texto válido que no contenga stats
         try:
             bio_elements = driver.find_elements(By.XPATH, "//header//span[@dir='auto']")
-            texts = [e.text.strip() for e in bio_elements if len(e.text.strip()) > 5]
-            if texts:
-                datos["bio"] = max(texts, key=len)
-                print(f"📋 Bio (fallback por longitud) para {username}: '{datos['bio']}'")
+            textos_validos = []
+            for el in bio_elements:
+                txt = el.text.strip()
+                txt_lower = txt.lower()
+                if any(stat in txt_lower for stat in ["seguidores", "seguidos", "publicaciones"]):
+                    continue
+                if txt:  # no filtres por longitud
+                    textos_validos.append(txt)
+
+            if textos_validos:
+                datos["bio"] = textos_validos[0]
+                print(f"📋 Bio (fallback primer válido) para {username}: '{datos['bio']}'")
             else:
                 datos["bio"] = ""
-                print(f"[WARN] Fallback sin resultados para bio en {username}")
+                print(f"[WARN] Fallback sin resultados válidos para bio en {username}")
         except Exception as e:
             datos["bio"] = ""
             print(f"[ERROR] Buscando bio fallback para {username}: {e}")
 
+
     # Links externos
-    try:
-        links = driver.find_elements(By.XPATH, '//a[@aria-label="Icono de enlace"]')
-        datos["links_externos"] = len(links)
-    except:
-        datos["links_externos"] = 0
+    links = driver.find_elements(By.XPATH, '//a[contains(@href, "l.instagram.com")]')
+    for link in links:
+        text = link.text.strip()
+        if link.is_displayed() and text:
+            href = link.get_attribute("href")
+            datos["links_externos"] = extraer_link_real(href)
+            break
 
     # Historias destacadas
     try:

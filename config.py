@@ -11,7 +11,7 @@ LOGS_DIR = os.path.join(BASE_DIR, "logs")
 TEMP_DIR = os.path.join(BASE_DIR, "temp")
 INPUT_DIR = os.path.join(BASE_DIR, "input")
 MODELS_DIR = os.path.join(BASE_DIR, "models")
-IMG_DIR = "output/img"
+IMG_DIR = os.path.join(OUTPUT_DIR, "img")
 
 # -------------------------
 # 📄 ARCHIVOS COMUNES

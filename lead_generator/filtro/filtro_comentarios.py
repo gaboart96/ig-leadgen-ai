@@ -4,17 +4,25 @@ import re
 import unicodedata
 from os import listdir
 from os.path import isfile, join
-from lead_generator.utils import normalizar_texto, elegir_db_y_tabla, es_spam, extraer_usuarios_unicos, penalizacion_femenina
 
+from lead_generator.utils import (
+    normalizar_texto,
+    elegir_db_y_tabla,
+    es_spam,
+    penalizacion_por_nombre_mujer,
+    penalizacion_por_comentario_mujer
+)
 
-# -# === filtro_comentarios.py ===
 from lead_generator.utils.db import (
     usuario_ya_filtrado,
     usuario_descartado,
     agregar_comentario_a_filtrado,
-    descartar_usuario_por_perfil,
+    descartar_usuario,
     guardar_usuario_filtrado
 )
+
+
+
 
 
 def filtrar_comentario_con_motivo(username, comentario):
@@ -26,20 +34,20 @@ def filtrar_comentario_con_motivo(username, comentario):
         return False, "Detectado como spam"
     return True, ""
 
+
 def filtrar_comentarios_por_usuarios(conn, debug=False):
     cursor = conn.cursor()
     cursor.execute("SELECT username, comentario FROM comentarios")
     filas = cursor.fetchall()
 
-    lista_comentarios = [{"username": u.strip().lower(), "comentario": c.strip()} for u, c in filas]
-
     nuevos_usuarios = []
     ya_existentes = 0
     descartados = 0
+    UMBRAL_SCORE = -1
 
-    for comentario in lista_comentarios:
-        username = comentario["username"]
-        texto = comentario["comentario"]
+    for fila in filas:
+        username = fila[0].strip().lower()
+        texto = fila[1].strip()
 
         if usuario_descartado(conn, username):
             if debug:
@@ -48,67 +56,76 @@ def filtrar_comentarios_por_usuarios(conn, debug=False):
             continue
 
         if usuario_ya_filtrado(conn, username):
-            agregar_comentario_a_filtrado(conn, username, texto)
+            #agregar_comentario_a_filtrado(conn, username, texto)
             ya_existentes += 1
             continue
 
-        # Penalizaciones acumulativas
-        penalizacion_total = 0.0
-        penalizacion_total += es_spam(username, texto, debug=debug)
-        penalizacion_total += penalizacion_femenina(username, "", texto)
+        penal_nom_mujer, razones_nom_mujer = penalizacion_por_nombre_mujer(username)
+        penal_com_mujer, razones_com_mujer = penalizacion_por_comentario_mujer(texto)
 
-        if debug:
-            print(f"🧮 Score prefiltrado total: {penalizacion_total}")
+        penal_nom_malo, razones_nom_malo = es_spam(username)
+        penal_com_malo, razones_com_malo = es_spam(texto)
 
-        if penalizacion_total < -1.0:
-            descartar_usuario_por_perfil(conn, username, ["score prefiltrado muy bajo"])
+        score_mujer = penal_nom_mujer + penal_com_mujer
+        score_malo = penal_nom_malo + penal_com_malo
+
+        razones_mujer = razones_nom_mujer + razones_com_mujer
+        razones_malo = razones_nom_malo + razones_com_malo
+
+        if score_mujer < UMBRAL_SCORE:
+            descartar_usuario(conn, username, razones_mujer, "descartados_mujer")
             descartados += 1
+            if debug:
+                print(f"🚫 Usuario {username} descartado por mujer: {razones_mujer}")
+            continue
+
+        if score_malo < UMBRAL_SCORE:
+            descartar_usuario(conn, username,  razones_malo, "descartados_malo")
+            descartados += 1
+            if debug:
+                print(f"🚫 Usuario {username} descartado por mujer: {razones_malo}")
             continue
 
         datos_usuario = {
             "username": username,
             "comentarios": texto,
-            "fotos_analizadas": 0,
-            "fotos_sin_personas": 0,
-            "flag_incompleto": True,
-            "filtro_descartado": False,
-            "motivo_descartado": "",
             "bio": "",
             "perfil_privado": False,
             "publicaciones": 0,
             "seguidores": 0,
             "seguidos": 0,
             "historias_destacadas": 0,
-            "links_externos": 0,
+            "links_externos": "",
             "edad_estimada": None,
-            "profesion_estimada": None,
+            "profesion": None,
             "localizaciones": [],
             "culturas": [],
-            "score_prefiltrado": penalizacion_total,
+            "score_malo": 0.0,
+            "motivo_penalizado_malo": "",
+            "score_mujer": round(score_mujer, 2),
+            "motivo_penalizado_mujer": ", ".join(razones_mujer),
+            "score_bio": None,
             "score_clip": None,
             "score_deepface": None,
-            "score_final": None
+            "score_final": None,
         }
 
         guardar_usuario_filtrado(conn, datos_usuario)
         nuevos_usuarios.append(username)
 
-        print(f"✅ Usuario {username} agregado con score_prefiltrado: {penalizacion_total}")
+        if debug:
+            print(f"✅ Usuario {username} agregado con score_mujer: {round(score_mujer, 2)} - Razones: {razones_mujer}")
 
-    print(f"\n🧹 Resultado del filtrado:")
-    print(f"✅ Nuevos usuarios filtrados: {len(nuevos_usuarios)}")
-    print(f"🔁 Comentarios añadidos a usuarios ya existentes: {ya_existentes}")
+    print(f"\n🧹 Resultado:")
+    print(f"✅ Nuevos usuarios: {len(nuevos_usuarios)}")
+    print(f"🔁 Comentarios añadidos a existentes: {ya_existentes}")
     print(f"🚫 Usuarios descartados: {descartados}")
-
     return nuevos_usuarios
-
 
 
 # ---------------------------
 # EJECUCIÓN INDEPENDIENTE
 # ---------------------------
-
-
 
 if __name__ == "__main__":
     conn, tabla = elegir_db_y_tabla()
